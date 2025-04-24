@@ -25,7 +25,6 @@ Pillow==10.2.0
 gtts==2.3.2
 SpeechRecognition==3.10.0
 pygame==2.5.2
-pyaudio==0.2.13
 pydub==0.25.1
 
 # Database
