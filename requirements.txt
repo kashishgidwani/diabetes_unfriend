@@ -51,7 +51,7 @@ rich==13.7.0
 
 # JSON handling
 jsonschema==4.19.2
-rpds-py==0.8.0
+rpds-py==0.24.0
 
 # Google API dependencies
 pyasn1-modules==0.2.8
