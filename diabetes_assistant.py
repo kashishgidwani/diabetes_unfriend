@@ -1,4 +1,13 @@
 import streamlit as st
+
+# Set page config first and only once - must be the first Streamlit command
+st.set_page_config(
+    page_title="Diabetes Assistant",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import os
 import logging
 from model_manager import model_manager, ModelManager
@@ -133,11 +142,13 @@ def check_ffmpeg():
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
         logger.info("ffmpeg is installed")
     except (subprocess.SubprocessError, FileNotFoundError):
-        logger.warning("ffmpeg is not installed. This is required for audio processing.")
-        st.warning("""
-            ffmpeg is required for audio processing but is not installed.
-            Please contact support if you're seeing this message on Streamlit Cloud.
-        """)
+        # Only show warning if not on Streamlit Cloud
+        if not os.environ.get('STREAMLIT_SERVER_HEADLESS'):
+            logger.warning("ffmpeg is not installed. This is required for audio processing.")
+            st.warning("""
+                ffmpeg is required for audio processing but is not installed.
+                Please contact support if you're seeing this message on Streamlit Cloud.
+            """)
 
 # Check ffmpeg installation at startup
 check_ffmpeg()
@@ -1703,16 +1714,6 @@ def save_medical_record():
 def main():
     """Main function to run the Streamlit app."""
     try:
-        # Set page config first and only once
-        if 'page_config_set' not in st.session_state:
-            st.set_page_config(
-                page_title="Diabetes Assistant",
-                page_icon="🏥",
-                layout="wide",
-                initial_sidebar_state="expanded"
-            )
-            st.session_state.page_config_set = True
-        
         # Initialize session state
         initialize_session_state()
         
