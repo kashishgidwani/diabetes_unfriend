@@ -23,8 +23,8 @@ A comprehensive web application for diabetes management and health monitoring.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/kashishgidwani9/diabetes-assistant.git
-cd diabetes-assistant
+git clone https://github.com/kashishgidwani/diabetes_unfriend.git
+cd diabetes_unfriend
 ```
 
 2. Create and activate a virtual environment:
@@ -52,6 +52,55 @@ streamlit run diabetes_assistant.py
 ```
 
 2. Open your browser and navigate to `http://localhost:8501`
+
+## Deployment
+
+### Deploying to Streamlit Cloud
+
+1. Create a Streamlit Cloud account at https://streamlit.io/cloud
+
+2. Connect your GitHub repository to Streamlit Cloud
+
+3. Configure your environment variables in Streamlit Cloud:
+   - MONGODB_URI
+   - GOOGLE_API_KEY
+
+4. Deploy your app
+
+### Deploying to Heroku
+
+1. Create a Heroku account and install the Heroku CLI
+
+2. Create a new Heroku app:
+```bash
+heroku create your-app-name
+```
+
+3. Set environment variables:
+```bash
+heroku config:set MONGODB_URI=your_mongodb_uri
+heroku config:set GOOGLE_API_KEY=your_google_api_key
+```
+
+4. Deploy to Heroku:
+```bash
+git push heroku main
+```
+
+### Deploying to AWS
+
+1. Create an AWS account and set up AWS CLI
+
+2. Create an EC2 instance
+
+3. Install required dependencies on the EC2 instance
+
+4. Set up environment variables
+
+5. Run the application using:
+```bash
+streamlit run diabetes_assistant.py
+```
 
 ## Project Structure
 
