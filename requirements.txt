@@ -8,9 +8,9 @@ streamlit==1.31.1
 
 # AI and machine learning
 google-generativeai==0.3.2
-tensorflow==2.17.1  # Updated to an available version
-torch==2.1.2
-torchaudio==2.1.2
+tensorflow==2.17.1
+torch==2.5.1  # Updated to an available version
+torchaudio==2.5.1  # Updated to match torch version
 scikit-learn==1.3.2
 openai-whisper==20231117
 
@@ -63,6 +63,3 @@ google-api-core==2.11.1
 typing-extensions==4.7.1
 packaging==23.1
 click==8.1.7
-
-# Additional dependencies
-reportlab==4.0.4
