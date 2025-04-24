@@ -73,4 +73,9 @@ logs/
 # Model files - DO NOT IGNORE
 !diabetes_model.joblib
 !feature_scaler.joblib
-!label_encoders.joblib 
+!label_encoders.joblib
+
+# Binaries - DO NOT IGNORE
+!bin/ffmpeg
+!bin/ffprobe
+!bin/ffplay 

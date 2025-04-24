@@ -137,24 +137,38 @@ os.environ['USE_MPS_DEVICE'] = ''
 
 # Check for ffmpeg installation
 def check_ffmpeg():
-    """Check if ffmpeg is installed and use system ffmpeg on Streamlit Cloud."""
+    """Check if ffmpeg is installed and use local binary if available."""
     try:
-        # Try to use system ffmpeg first (Streamlit Cloud)
+        # Try to use local ffmpeg first
+        local_ffmpeg = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
+        if os.path.exists(local_ffmpeg):
+            # Make it executable
+            os.chmod(local_ffmpeg, 0o755)
+            # Test if it works
+            subprocess.run([local_ffmpeg, '-version'], capture_output=True, check=True)
+            logger.info("Using local ffmpeg binary")
+            return local_ffmpeg
+    except Exception as e:
+        logger.warning(f"Local ffmpeg not available: {str(e)}")
+    
+    try:
+        # Try system ffmpeg
         subprocess.run(['/usr/bin/ffmpeg', '-version'], capture_output=True, check=True)
         logger.info("Using system ffmpeg")
-    except (subprocess.SubprocessError, FileNotFoundError):
-        try:
-            # Try local ffmpeg
-            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-            logger.info("Using local ffmpeg")
-        except (subprocess.SubprocessError, FileNotFoundError):
-            # Only show warning if not on Streamlit Cloud
-            if not os.environ.get('STREAMLIT_SERVER_HEADLESS'):
-                logger.warning("ffmpeg is not installed. This is required for audio processing.")
-                st.warning("""
-                    ffmpeg is required for audio processing but is not installed.
-                    Please contact support if you're seeing this message on Streamlit Cloud.
-                """)
+        return '/usr/bin/ffmpeg'
+    except Exception as e:
+        logger.warning(f"System ffmpeg not available: {str(e)}")
+    
+    try:
+        # Try PATH ffmpeg
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        logger.info("Using PATH ffmpeg")
+        return 'ffmpeg'
+    except Exception as e:
+        logger.warning(f"PATH ffmpeg not available: {str(e)}")
+    
+    logger.warning("No ffmpeg installation found. Audio processing may be limited.")
+    return None
 
 # Check ffmpeg installation at startup
 check_ffmpeg()
@@ -584,6 +598,7 @@ class SpeechToText:
         # Force CPU usage to avoid FP16 warning
         self.device = "cpu"
         self.model = whisper.load_model(model_size, device=self.device)
+        self.ffmpeg_path = check_ffmpeg()
         logger.info(f"SpeechToText initialized with model size: {model_size} on {self.device}")
     
     def preprocess_audio(self, audio_data: bytes) -> str:
@@ -602,11 +617,34 @@ class SpeechToText:
                 temp_file.write(audio_data)
                 temp_path = temp_file.name
 
-            # Convert audio to the right format if needed
-            audio = AudioSegment.from_file(temp_path)
-            audio = audio.set_frame_rate(16000)
-            audio = audio.set_channels(1)
-            audio.export(temp_path, format="wav")
+            # Convert audio to the right format using ffmpeg if available
+            if self.ffmpeg_path:
+                try:
+                    output_path = temp_path + ".converted.wav"
+                    subprocess.run([
+                        self.ffmpeg_path,
+                        '-i', temp_path,
+                        '-ar', '16000',
+                        '-ac', '1',
+                        '-y',
+                        output_path
+                    ], capture_output=True, check=True)
+                    os.unlink(temp_path)
+                    return output_path
+                except Exception as e:
+                    logger.warning(f"Could not preprocess audio with ffmpeg: {str(e)}")
+                    return temp_path
+            else:
+                # Try pydub as fallback
+                try:
+                    audio = AudioSegment.from_file(temp_path)
+                    audio = audio.set_frame_rate(16000)
+                    audio = audio.set_channels(1)
+                    audio.export(temp_path, format="wav")
+                except Exception as e:
+                    logger.warning(f"Could not preprocess audio with pydub: {str(e)}")
+                    # If preprocessing fails, try to use the file as is
+                    pass
 
             return temp_path
             
@@ -1024,27 +1062,52 @@ def show_speech_input():
             if st.button("Process Audio"):
                 with st.spinner("Processing audio..."):
                     try:
-                        result = process_speech_input(audio_file)
+                        # Save the uploaded file to a temporary location
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                            tmp_file.write(audio_file.getvalue())
+                            tmp_path = tmp_file.name
                         
-                        if result.get("error"):
-                            st.error(f"Error: {result['error']}")
-                        else:
+                        try:
+                            # Process audio
+                            transcription = st.session_state.speech_to_text.process_audio_file(tmp_path)
+                            
+                            if not transcription:
+                                raise ValueError("No transcription generated")
+                                
+                            # Generate response using the same process as text input
+                            response = process_user_input(transcription)
+                            
+                            # Save to database
+                            if st.session_state.is_authenticated and st.session_state.user:
+                                speech_data = {
+                                    "user_id": str(st.session_state.user["_id"]),
+                                    "transcription": transcription,
+                                    "response": response,
+                                    "timestamp": datetime.now()
+                                }
+                                db.speech_inputs.insert_one(speech_data)
+                                logger.info("Speech input saved to database successfully")
+                            
                             st.write("**Transcription:**")
-                            st.write(result["transcription"])
+                            st.write(transcription)
                             st.write("**Response:**")
-                            st.write(result["response"])
+                            st.write(response)
                             
                             # Add to chat history
                             if 'messages' not in st.session_state:
                                 st.session_state.messages = []
                             st.session_state.messages.append({
                                 "role": "user",
-                                "content": result["transcription"]
+                                "content": transcription
                             })
                             st.session_state.messages.append({
                                 "role": "assistant",
-                                "content": result["response"]
+                                "content": response
                             })
+                            
+                        finally:
+                            # Clean up temporary file
+                            os.unlink(tmp_path)
                             
                     except Exception as e:
                         logger.error(f"Error processing audio: {str(e)}")
