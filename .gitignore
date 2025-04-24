@@ -68,4 +68,9 @@ logs/
 *.bmp
 
 # PDF files
-*.pdf 
+*.pdf
+
+# Model files - DO NOT IGNORE
+!diabetes_model.joblib
+!feature_scaler.joblib
+!label_encoders.joblib 

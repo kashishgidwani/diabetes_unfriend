@@ -137,18 +137,24 @@ os.environ['USE_MPS_DEVICE'] = ''
 
 # Check for ffmpeg installation
 def check_ffmpeg():
-    """Check if ffmpeg is installed."""
+    """Check if ffmpeg is installed and use system ffmpeg on Streamlit Cloud."""
     try:
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-        logger.info("ffmpeg is installed")
+        # Try to use system ffmpeg first (Streamlit Cloud)
+        subprocess.run(['/usr/bin/ffmpeg', '-version'], capture_output=True, check=True)
+        logger.info("Using system ffmpeg")
     except (subprocess.SubprocessError, FileNotFoundError):
-        # Only show warning if not on Streamlit Cloud
-        if not os.environ.get('STREAMLIT_SERVER_HEADLESS'):
-            logger.warning("ffmpeg is not installed. This is required for audio processing.")
-            st.warning("""
-                ffmpeg is required for audio processing but is not installed.
-                Please contact support if you're seeing this message on Streamlit Cloud.
-            """)
+        try:
+            # Try local ffmpeg
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            logger.info("Using local ffmpeg")
+        except (subprocess.SubprocessError, FileNotFoundError):
+            # Only show warning if not on Streamlit Cloud
+            if not os.environ.get('STREAMLIT_SERVER_HEADLESS'):
+                logger.warning("ffmpeg is not installed. This is required for audio processing.")
+                st.warning("""
+                    ffmpeg is required for audio processing but is not installed.
+                    Please contact support if you're seeing this message on Streamlit Cloud.
+                """)
 
 # Check ffmpeg installation at startup
 check_ffmpeg()
@@ -273,7 +279,10 @@ class PredictiveRecommendation:
             scaler_path = 'feature_scaler.joblib'
             
             if not all(os.path.exists(path) for path in [model_path, encoders_path, scaler_path]):
-                logger.error("Model files not found. Please run train_model.py first.")
+                logger.error("Model files not found. Please ensure the following files are present:")
+                logger.error(f"- {model_path}")
+                logger.error(f"- {encoders_path}")
+                logger.error(f"- {scaler_path}")
                 return
             
             # Load the trained model, label encoders, and scaler
@@ -281,6 +290,22 @@ class PredictiveRecommendation:
             self.label_encoders = joblib.load(encoders_path)
             self.scaler = joblib.load(scaler_path)
             logger.info("Predictive model loaded successfully")
+            
+            # Verify model is working
+            test_data = pd.DataFrame([{
+                'Age': 30,
+                'Gender': self.label_encoders['Gender'].transform(['Male'])[0],
+                'BloodPressureIssue': 0,
+                'KidneyIssue': 0,
+                'HeartProblem': 0,
+                'JointPainIssue': 0,
+                'AgeGroup': 0,
+                'HealthScore': 0
+            }])
+            test_features = self.scaler.transform(test_data)
+            test_prediction = self.model.predict(test_features)
+            logger.info(f"Model test prediction successful: {test_prediction[0]}")
+            
         except Exception as e:
             logger.error(f"Error loading predictive model: {str(e)}")
             self.model = None
