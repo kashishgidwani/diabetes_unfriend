@@ -38,7 +38,7 @@ import joblib
 
 # Import custom components
 from pdf_report_generator import PDFReportGenerator
-from Predictive_recommendation import PredictiveRecommendation
+from predictive_recommendation import PredictiveRecommendation
 
 # Configure logging
 logging.basicConfig(
