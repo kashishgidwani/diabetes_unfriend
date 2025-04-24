@@ -128,27 +128,16 @@ os.environ['USE_MPS_DEVICE'] = ''
 
 # Check for ffmpeg installation
 def check_ffmpeg():
-    """Check if ffmpeg is installed and install it if not."""
+    """Check if ffmpeg is installed."""
     try:
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
         logger.info("ffmpeg is installed")
     except (subprocess.SubprocessError, FileNotFoundError):
-        logger.warning("ffmpeg is not installed. Attempting to install...")
-        try:
-            if os.name == 'nt':  # Windows
-                subprocess.run(['winget', 'install', 'ffmpeg'], check=True)
-            else:  # Linux/Mac
-                subprocess.run(['brew', 'install', 'ffmpeg'], check=True)
-            logger.info("ffmpeg installed successfully")
-        except Exception as e:
-            logger.error(f"Failed to install ffmpeg: {str(e)}")
-            st.error("""
-                ffmpeg is required for audio processing but could not be installed automatically.
-                Please install ffmpeg manually:
-                - Windows: Download from https://ffmpeg.org/download.html
-                - Mac: Run 'brew install ffmpeg'
-                - Linux: Run 'sudo apt-get install ffmpeg'
-            """)
+        logger.warning("ffmpeg is not installed. This is required for audio processing.")
+        st.warning("""
+            ffmpeg is required for audio processing but is not installed.
+            Please contact support if you're seeing this message on Streamlit Cloud.
+        """)
 
 # Check ffmpeg installation at startup
 check_ffmpeg()
@@ -1714,13 +1703,15 @@ def save_medical_record():
 def main():
     """Main function to run the Streamlit app."""
     try:
-        # Set page config first
-        st.set_page_config(
-            page_title="Diabetes Assistant",
-            page_icon="🏥",
-            layout="wide",
-            initial_sidebar_state="expanded"
-        )
+        # Set page config first and only once
+        if 'page_config_set' not in st.session_state:
+            st.set_page_config(
+                page_title="Diabetes Assistant",
+                page_icon="🏥",
+                layout="wide",
+                initial_sidebar_state="expanded"
+            )
+            st.session_state.page_config_set = True
         
         # Initialize session state
         initialize_session_state()
