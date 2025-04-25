@@ -1,0 +1,1 @@
+web: streamlit run diabetes_assistant.py --server.port $PORT 
