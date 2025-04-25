@@ -14,7 +14,7 @@ A comprehensive web application for diabetes management and health monitoring.
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.10
 - MongoDB
 - FFmpeg (for audio processing)
 - Required Python packages (see requirements.txt)
