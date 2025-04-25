@@ -2,7 +2,7 @@
 
 A comprehensive AI-powered diabetes management and analysis application that helps users track, analyze, and understand their diabetes-related health data.
 
-## 🌟 Features
+## Features
 
 - **Voice & Text Input**: Interact with the assistant through voice commands or text input
 - **Image Analysis**: Upload and analyze diabetes-related images (e.g., food, wounds, glucose readings)
@@ -12,7 +12,7 @@ A comprehensive AI-powered diabetes management and analysis application that hel
 - **AI-Powered Insights**: Get personalized insights and recommendations
 - **Secure Authentication**: Protected user data with secure login system
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -51,7 +51,7 @@ A comprehensive AI-powered diabetes management and analysis application that hel
    streamlit run diabetes_assistant.py
    ```
 
-## 📊 Features in Detail
+##  Features in Detail
 
 ### Voice & Text Input
 - Natural language processing for understanding user queries
@@ -81,22 +81,22 @@ A comprehensive AI-powered diabetes management and analysis application that hel
 - Download and share reports
 - Track progress over time
 
-## 🔒 Security
+##  Security
 
 - Secure user authentication
 - Encrypted data storage
 - Protected API keys
 - Regular security updates
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📝 License
+##  License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - OpenAI for providing the AI models
 - Streamlit for the web framework
