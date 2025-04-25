@@ -1,4 +1,9 @@
 import streamlit as st
+import asyncio
+import nest_asyncio
+
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply()
 
 # Set page config first and only once - must be the first Streamlit command
 st.set_page_config(
@@ -44,6 +49,9 @@ from pydub import AudioSegment
 import subprocess
 from speech_to_text import SpeechToText
 import joblib
+import platform
+import urllib.request
+import zipfile
 
 # Import custom components
 from pdf_report_generator import PDFReportGenerator
@@ -63,6 +71,13 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Initialize event loop for async operations
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
 class ImageAnalyzer:
     def __init__(self, api_key: Optional[str] = None):
@@ -139,43 +154,108 @@ os.environ['USE_MPS_DEVICE'] = ''
 def check_ffmpeg():
     """Check if ffmpeg is installed and use local binary if available."""
     try:
-        # Try to use local ffmpeg first
+        # First try system ffmpeg
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info("Using system ffmpeg")
+            return 'ffmpeg'
+    except Exception as e:
+        logger.warning(f"System ffmpeg not available: {str(e)}")
+    
+    try:
+        # Try local ffmpeg
         local_ffmpeg = os.path.join(os.path.dirname(__file__), 'bin', 'ffmpeg')
         if os.path.exists(local_ffmpeg):
             # Make it executable
             os.chmod(local_ffmpeg, 0o755)
             # Test if it works
-            subprocess.run([local_ffmpeg, '-version'], capture_output=True, check=True)
-            logger.info("Using local ffmpeg binary")
-            return local_ffmpeg
+            result = subprocess.run([local_ffmpeg, '-version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info("Using local ffmpeg binary")
+                return local_ffmpeg
     except Exception as e:
         logger.warning(f"Local ffmpeg not available: {str(e)}")
     
+    # If no ffmpeg found, try to install it
     try:
-        # Try system ffmpeg
-        subprocess.run(['/usr/bin/ffmpeg', '-version'], capture_output=True, check=True)
-        logger.info("Using system ffmpeg")
-        return '/usr/bin/ffmpeg'
+        if os.name == 'posix':  # Linux or macOS
+            # Check for Homebrew on macOS
+            if os.path.exists('/opt/homebrew/bin/brew') or os.path.exists('/usr/local/bin/brew'):
+                logger.info("Attempting to install ffmpeg using Homebrew...")
+                subprocess.run(['brew', 'install', 'ffmpeg'], check=True)
+            # Check for apt-get on Linux
+            elif os.path.exists('/usr/bin/apt-get'):
+                logger.info("Attempting to install ffmpeg using apt-get...")
+                subprocess.run(['sudo', 'apt-get', 'update'], check=True)
+                subprocess.run(['sudo', 'apt-get', 'install', '-y', 'ffmpeg'], check=True)
+            # Check for yum on Linux
+            elif os.path.exists('/usr/bin/yum'):
+                logger.info("Attempting to install ffmpeg using yum...")
+                subprocess.run(['sudo', 'yum', 'install', '-y', 'ffmpeg'], check=True)
+            
+            # Verify installation
+            result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info("Successfully installed and using system ffmpeg")
+                return 'ffmpeg'
     except Exception as e:
-        logger.warning(f"System ffmpeg not available: {str(e)}")
+        logger.warning(f"Failed to install ffmpeg: {str(e)}")
     
+    # If all installation attempts fail, try to download a pre-built binary
     try:
-        # Try PATH ffmpeg
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-        logger.info("Using PATH ffmpeg")
-        return 'ffmpeg'
+        logger.info("Attempting to download pre-built ffmpeg binary...")
+        
+        # Create bin directory if it doesn't exist
+        bin_dir = os.path.join(os.path.dirname(__file__), 'bin')
+        os.makedirs(bin_dir, exist_ok=True)
+        
+        # Download appropriate binary based on OS
+        if os.name == 'nt':  # Windows
+            url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+        elif os.name == 'posix':  # Linux or macOS
+            if platform.machine() == 'x86_64':
+                url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+            else:
+                url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
+        
+        # Download and extract
+        temp_file = os.path.join(bin_dir, 'ffmpeg_temp.zip')
+        urllib.request.urlretrieve(url, temp_file)
+        
+        if os.name == 'nt':
+            with zipfile.ZipFile(temp_file, 'r') as zip_ref:
+                zip_ref.extractall(bin_dir)
+        else:
+            subprocess.run(['tar', '-xf', temp_file, '-C', bin_dir], check=True)
+        
+        # Clean up
+        os.remove(temp_file)
+        
+        # Make executable
+        ffmpeg_path = os.path.join(bin_dir, 'ffmpeg')
+        os.chmod(ffmpeg_path, 0o755)
+        
+        # Test
+        result = subprocess.run([ffmpeg_path, '-version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info("Successfully downloaded and using local ffmpeg binary")
+            return ffmpeg_path
+            
     except Exception as e:
-        logger.warning(f"PATH ffmpeg not available: {str(e)}")
+        logger.warning(f"Failed to download ffmpeg binary: {str(e)}")
     
     logger.warning("No ffmpeg installation found. Audio processing may be limited.")
     return None
 
 # Check ffmpeg installation at startup
-check_ffmpeg()
+FFMPEG_PATH = check_ffmpeg()
 
 def check_api_rate_limit():
     """Check if enough time has passed since the last API call"""
     current_time = time.time()
+    if 'last_api_call' not in st.session_state:
+        st.session_state.last_api_call = 0
+    
     if current_time - st.session_state.last_api_call < 60:  # 60 seconds cooldown
         remaining_time = int(60 - (current_time - st.session_state.last_api_call))
         st.warning(f"Please wait {remaining_time} seconds before making another request.")
@@ -226,7 +306,7 @@ def show_login_form():
                                 logger.error(f"Error loading user data: {str(e)}")
                             
                             st.success("Login successful!")
-                            st.experimental_rerun()
+                            st.rerun()  # Use st.rerun() instead of experimental_rerun
                         else:
                             st.error("Invalid credentials. Please check your email and password.")
                     except Exception as e:
@@ -298,7 +378,7 @@ class PredictiveRecommendation:
                 logger.error(f"- {encoders_path}")
                 logger.error(f"- {scaler_path}")
                 return
-            
+                
             # Load the trained model, label encoders, and scaler
             self.model = joblib.load(model_path)
             self.label_encoders = joblib.load(encoders_path)
@@ -385,26 +465,26 @@ class PredictiveRecommendation:
             return self.get_default_recommendations()
 
     def get_default_recommendations(self):
-        return {
-            'diet_plan': {
-                'meals': ['Consult with your healthcare provider for personalized diet recommendations'],
-                'snacks': ['Healthy snacks as recommended by your doctor'],
-                'guidelines': ['Follow your healthcare provider\'s advice']
-            },
-            'exercise_plan': {
-                'cardio': ['Walking', 'Swimming'],
-                'strength': ['Light resistance training'],
-                'flexibility': ['Gentle stretching'],
-                'duration': '30 minutes per session',
-                'frequency': '5 days per week'
-            },
-            'lifestyle_changes': [
-                'Monitor blood sugar regularly',
-                'Maintain a healthy diet',
-                'Stay physically active',
-                'Get regular check-ups'
-            ]
-        }
+                return {
+                    'diet_plan': {
+                        'meals': ['Consult with your healthcare provider for personalized diet recommendations'],
+                        'snacks': ['Healthy snacks as recommended by your doctor'],
+                        'guidelines': ['Follow your healthcare provider\'s advice']
+                    },
+                    'exercise_plan': {
+                        'cardio': ['Walking', 'Swimming'],
+                        'strength': ['Light resistance training'],
+                        'flexibility': ['Gentle stretching'],
+                        'duration': '30 minutes per session',
+                        'frequency': '5 days per week'
+                    },
+                    'lifestyle_changes': [
+                        'Monitor blood sugar regularly',
+                        'Maintain a healthy diet',
+                        'Stay physically active',
+                        'Get regular check-ups'
+                    ]
+                }
 
     def get_diet_plan(self, diabetes_type, age):
         if diabetes_type.lower() == 'type 1':
@@ -598,7 +678,7 @@ class SpeechToText:
         # Force CPU usage to avoid FP16 warning
         self.device = "cpu"
         self.model = whisper.load_model(model_size, device=self.device)
-        self.ffmpeg_path = check_ffmpeg()
+        self.ffmpeg_path = FFMPEG_PATH
         logger.info(f"SpeechToText initialized with model size: {model_size} on {self.device}")
     
     def preprocess_audio(self, audio_data: bytes) -> str:
@@ -634,17 +714,17 @@ class SpeechToText:
                 except Exception as e:
                     logger.warning(f"Could not preprocess audio with ffmpeg: {str(e)}")
                     return temp_path
-            else:
-                # Try pydub as fallback
-                try:
-                    audio = AudioSegment.from_file(temp_path)
-                    audio = audio.set_frame_rate(16000)
-                    audio = audio.set_channels(1)
-                    audio.export(temp_path, format="wav")
-                except Exception as e:
-                    logger.warning(f"Could not preprocess audio with pydub: {str(e)}")
-                    # If preprocessing fails, try to use the file as is
-                    pass
+            
+            # Try pydub as fallback
+            try:
+                audio = AudioSegment.from_file(temp_path)
+                audio = audio.set_frame_rate(16000)
+                audio = audio.set_channels(1)
+                audio.export(temp_path, format="wav")
+            except Exception as e:
+                logger.warning(f"Could not preprocess audio with pydub: {str(e)}")
+                # If preprocessing fails, try to use the file as is
+                pass
 
             return temp_path
             
@@ -762,7 +842,7 @@ def initialize_session_state():
     if 'user' not in st.session_state:
         st.session_state.user = None
     
-    # Medical record states
+    # Initialize medical record structure
     if 'medical_record' not in st.session_state:
         st.session_state.medical_record = {
             'medical_bills': [],
@@ -778,7 +858,16 @@ def initialize_session_state():
         try:
             user_data = db.users.find_one({"_id": st.session_state.user["_id"]})
             if user_data:
-                st.session_state.medical_record = user_data.get("medical_record", st.session_state.medical_record)
+                # Ensure all required fields exist in the medical record
+                if 'medical_record' not in user_data:
+                    user_data['medical_record'] = st.session_state.medical_record
+                else:
+                    # Ensure all required fields exist in the loaded medical record
+                    for key in st.session_state.medical_record.keys():
+                        if key not in user_data['medical_record']:
+                            user_data['medical_record'][key] = st.session_state.medical_record[key]
+                
+                st.session_state.medical_record = user_data['medical_record']
                 st.session_state.health_assessment = user_data.get("health_assessment")
                 st.session_state.image_analyses = user_data.get("image_analyses", [])
                 st.session_state.reports = user_data.get("reports", [])
@@ -1070,7 +1159,7 @@ def show_speech_input():
                         try:
                             # Process audio
                             transcription = st.session_state.speech_to_text.process_audio_file(tmp_path)
-                            
+                        
                             if not transcription:
                                 raise ValueError("No transcription generated")
                                 
@@ -1163,43 +1252,75 @@ def show_reports():
     # Display latest vitals
     st.subheader("Latest Vitals")
     if st.session_state.medical_record.get('vitals_history'):
-        latest_vitals = st.session_state.medical_record['vitals_history'][-1]
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Blood Glucose", f"{latest_vitals['blood_glucose']} mg/dL")
-        with col2:
-            st.metric("Blood Pressure", latest_vitals['blood_pressure'])
-        with col3:
-            st.metric("Heart Rate", f"{latest_vitals['heart_rate']} bpm")
+        try:
+            latest_vitals = st.session_state.medical_record['vitals_history'][-1]
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                blood_glucose = latest_vitals.get('blood_glucose', 'N/A')
+                st.metric("Blood Glucose", f"{blood_glucose} mg/dL" if blood_glucose != 'N/A' else 'N/A')
+            
+            with col2:
+                blood_pressure = latest_vitals.get('blood_pressure', 'N/A')
+                st.metric("Blood Pressure", blood_pressure)
+            
+            with col3:
+                heart_rate = latest_vitals.get('heart_rate', 'N/A')
+                st.metric("Heart Rate", f"{heart_rate} bpm" if heart_rate != 'N/A' else 'N/A')
+            
+            # Display additional vitals if available
+            if latest_vitals.get('notes'):
+                st.write("Notes:", latest_vitals['notes'])
+            
+            # Display date of measurement
+            if latest_vitals.get('date'):
+                st.write(f"Measured on: {latest_vitals['date'].strftime('%Y-%m-%d %H:%M')}")
+        except Exception as e:
+            logger.error(f"Error displaying vitals: {str(e)}")
+            st.warning("Error displaying vitals. Please try again.")
+    else:
+        st.info("No vitals recorded.")
     
     # Display image analysis history with individual PDF downloads
     st.subheader("Image Analysis History")
     if st.session_state.medical_record.get('image_analyses'):
         for idx, analysis in enumerate(st.session_state.medical_record['image_analyses']):
-            with st.expander(f"Analysis {idx + 1} - {analysis['timestamp'].strftime('%Y-%m-%d %H:%M')}"):
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    if analysis.get('image_data'):
-                        image_bytes = base64.b64decode(analysis['image_data'])
-                        st.image(image_bytes, width=300)
-                with col2:
-                    st.write("Analysis:")
-                    st.write(analysis['analysis']['description'])
-                    
-                    # Add individual report download button
-                    if st.button(f"📄 Download This Report", key=f"download_report_{idx}"):
-                        pdf_file = generate_single_analysis_report(analysis)
-                        if pdf_file:
-                            with open(pdf_file, "rb") as f:
-                                pdf_bytes = f.read()
-                            st.download_button(
-                                label="Download PDF",
-                                data=pdf_bytes,
-                                file_name=f"analysis_report_{analysis['timestamp'].strftime('%Y%m%d_%H%M')}.pdf",
-                                mime="application/pdf",
-                                key=f"download_button_{idx}"
-                            )
-                            os.remove(pdf_file)
+            try:
+                analysis_date = analysis.get('date', datetime.now())
+                with st.expander(f"Analysis {idx + 1} - {analysis_date.strftime('%Y-%m-%d %H:%M')}"):
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        if analysis.get('image_data'):
+                            try:
+                                image_bytes = base64.b64decode(analysis['image_data'])
+                                st.image(image_bytes, width=300)
+                            except Exception as e:
+                                logger.error(f"Error displaying image: {str(e)}")
+                                st.warning("Could not display image")
+                    with col2:
+                        st.write("Analysis:")
+                        if analysis.get('analysis_result'):
+                            st.write(analysis['analysis_result'].get('description', 'No description available'))
+                        else:
+                            st.write("No analysis results available")
+                        
+                        # Add individual report download button
+                        if st.button(f"📄 Download This Report", key=f"download_report_{idx}"):
+                            pdf_file = generate_single_analysis_report(analysis)
+                            if pdf_file:
+                                with open(pdf_file, "rb") as f:
+                                    pdf_bytes = f.read()
+                                st.download_button(
+                                    label="Download PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"analysis_report_{analysis_date.strftime('%Y%m%d_%H%M')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"download_button_{idx}"
+                                )
+                                os.remove(pdf_file)
+            except Exception as e:
+                logger.error(f"Error displaying analysis {idx + 1}: {str(e)}")
+                continue
     else:
         st.info("No image analyses recorded.")
 
@@ -1359,7 +1480,7 @@ def show_health_assessment():
                         logger.error(f"Error saving health assessment: {str(e)}")
                     
                     st.success("Assessment submitted successfully!")
-                    st.experimental_rerun()
+                    st.rerun()
                     
     except Exception as e:
         logger.error(f"Error in health assessment interface: {str(e)}")
@@ -1394,7 +1515,7 @@ def show_image_analysis():
                             st.success("Image analysis saved successfully!")
                             
                             # Force a rerun to update the display
-                            st.experimental_rerun()
+                            st.rerun()
                     except Exception as e:
                         logger.error(f"Error analyzing image: {str(e)}")
                         st.error("An error occurred while analyzing the image. Please try again.")
@@ -1489,7 +1610,7 @@ def generate_pdf_report(user_data, recommendations, image_analysis=None):
             if latest_assessment:
                 # Add health assessment results
                 story.append(Paragraph("Health Assessment Results", getSampleStyleSheet()['Heading2']))
-                
+        
                 # BMI Information
                 story.append(Paragraph(f"BMI: {latest_assessment.get('bmi', 'Not available'):.1f} ({latest_assessment.get('bmi_category', 'Not available')})", 
                                      getSampleStyleSheet()['Normal']))
@@ -1507,8 +1628,6 @@ def generate_pdf_report(user_data, recommendations, image_analysis=None):
                                      getSampleStyleSheet()['Normal']))
                 story.append(Paragraph(f"• Diet Type: {latest_assessment.get('lifestyle_factors', {}).get('diet_type', 'Not available')}", 
                                      getSampleStyleSheet()['Normal']))
-                
-                story.append(Spacer(1, 20))
                 
                 # Add recommendations
                 if latest_assessment.get('recommendations'):

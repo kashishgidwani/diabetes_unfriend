@@ -22,13 +22,13 @@ A comprehensive web application for diabetes management and health monitoring.
 ## Installation
 
 1. Clone the repository:
-```bash
+   ```bash
 git clone https://github.com/kashishgidwani/diabetes_unfriend.git
 cd diabetes_unfriend
-```
+   ```
 
 2. Create and activate a virtual environment:
-```bash
+   ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
@@ -36,7 +36,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 3. Install required packages:
 ```bash
 pip install -r requirements.txt
-```
+   ```
 
 4. Create a `.env` file with your configuration:
 ```
@@ -47,7 +47,7 @@ GOOGLE_API_KEY=your_google_api_key
 ## Usage
 
 1. Start the application:
-```bash
+   ```bash
 streamlit run diabetes_assistant.py
 ```
 
